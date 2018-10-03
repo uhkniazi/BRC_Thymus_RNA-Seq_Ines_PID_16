@@ -80,7 +80,7 @@ hist(oSce$pct_counts_feature_control, xlab="ERCC proportion (%)",
 bDropSpike = isOutlier(oSce$pct_counts_feature_control, nmads=3, type="higher"); table(bDropSpike)
 
 # Removal of a substantial proportion of cells (> 10%) may be indicative of an overall issue with data quality.
-oSce = oSce[,!(bDropFeature | bDropLibsize | bDropSpike)]
+oSce = oSce[,!(bDropFeature | bDropLibsize)]# | bDropSpike)]
 data.frame(ByLibSize=sum(bDropLibsize), ByFeature=sum(bDropFeature),
            BySpike=sum(bDropSpike), Remaining=ncol(oSce))
 # ByLibSize ByFeature BySpike Remaining
@@ -131,9 +131,17 @@ oDiag.2 = CDiagnosticPlots(exprs(oSce.T), 'spikein')
 # the batch variable we wish to colour by, 
 # this can be any grouping/clustering in the data capture process
 dfSample = data.frame(colData(oSce.T))
-fBatch = dfSample$characteristics_ch1.4
-table(fBatch)
-fBatch = factor(fBatch)
+# fBatch = dfSample$characteristics_ch1.4
+# table(fBatch)
+# fBatch = factor(fBatch)
+
+fBatch = as.character(dfSample$characteristics_ch1.4)
+fBatch = gsub('mouse age: ', '', fBatch)
+fBatch = factor(fBatch, levels=c('E14.5', "E18.5", "6 days", "4-6 weeks"))
+tx = gsub('selection marker: ', '', as.character(dfSample$characteristics_ch1.2))
+tx = factor(tx)
+st = gsub('strain: ', '', as.character(dfSample$characteristics_ch1))
+st = factor(st)
 
 dir.create('results')
 pdf('results/matrixClustering.pdf')
@@ -154,6 +162,7 @@ plot.missing.summary(oDiag.2, fBatch, axis.label.cex = 0.7, cex.main=1)
 
 plot.PCA(oDiag.1, fBatch, cex.main=1)
 plot.PCA(oDiag.2, fBatch, cex.main=1)
+plot.PCA(oDiag.1, fBatch, cex.main=1, csLabels = as.character(tx))
 # 
 plot.dendogram(oDiag.1, fBatch, labels_cex = 0.8, cex.main=0.7)
 plot.dendogram(oDiag.2, fBatch, labels_cex = 0.8, cex.main=0.7)
@@ -179,6 +188,7 @@ plot.PCA(oDiag.1, factor(tx), csLabels = as.character(fBatch), cex.main=1)
 
 ##### fit a model and produce some plots
 #levels(fBatch) = c('E14.5', "E18.5", "4-6 weeks", "6 days")
+library(lattice)
 fBatch = as.character(dfSample$characteristics_ch1.4)
 fBatch = gsub('mouse age: ', '', fBatch)
 fBatch = factor(fBatch, levels=c('E14.5', "E18.5", "6 days", "4-6 weeks"))
@@ -188,11 +198,12 @@ st = gsub('strain: ', '', as.character(dfSample$characteristics_ch1))
 st = factor(st)
 dfData = data.frame(Krt76=exprs(oSce.F)['Krt76', ], Coef=fBatch, Coef.adj=st, Coef.adj2 = tx)
 
-dotplot(Krt76 ~ Coef, data=dfData, groups=Coef.adj, pch=c(1:4), col=1:4, key=list(space='top', columns=2, points=list(pch=1:4, col=1:4),
-                                                                                  text=list(levels(dfData$Coef.adj))),
-        main='Normalised Krt Expression on Log Scale')
+# dotplot(Krt76 ~ Coef, data=dfData, groups=Coef.adj, pch=c(1:4), col=1:4, key=list(space='top', columns=2, points=list(pch=1:4, col=1:4),
+#                                                                                   text=list(levels(dfData$Coef.adj))),
+#         main='Normalised Krt Expression on Log Scale')
 
-dotplot(Krt76 ~ Coef | Coef.adj:Coef.adj2, data=dfData, type='p', par.strip.text=list(cex=0.7))
+dotplot(Krt76 ~ Coef | Coef.adj:Coef.adj2, data=dfData, type='p', par.strip.text=list(cex=0.7),
+        main='Krt76 expression vs mouse age grouped by strain:selection marker ')
 
 ## drop some empty factor levels
 dfData = dfData[dfData$Coef.adj2 %in% c('CD45-', 'CD45- Epcam+'),]
