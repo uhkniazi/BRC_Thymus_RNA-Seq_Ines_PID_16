@@ -15,7 +15,7 @@ dbListTables(db)
 # get the query
 g_did
 q = paste0('select MetaFile.* from MetaFile
-           where (MetaFile.idData = 33) AND (MetaFile.comment like "%ines%")')
+           where (MetaFile.idData = 34) AND (MetaFile.comment like "%ines%")')
 dfSample = dbGetQuery(db, q)
 dfSample
 n = paste0(dfSample$location, dfSample$name)
@@ -117,13 +117,21 @@ source('CDiagnosticPlots.R')
 # delete the file after source
 unlink('CDiagnosticPlots.R')
 
+## drop the intestine cells
+i = grep('Intestine', as.character(dfSample$characteristics_ch1.1))
+
+oSce.F.bk = oSce.F
+oSce.T.bk = oSce.T
+oSce.F = oSce.F[,-i]
+oSce.T = oSce.T[,-i]
+
 oDiag.1 = CDiagnosticPlots(exprs(oSce.F), 'no spikein')
 oDiag.2 = CDiagnosticPlots(exprs(oSce.T), 'spikein')
 
 # the batch variable we wish to colour by, 
 # this can be any grouping/clustering in the data capture process
-dfSample = data.frame(colData(oSce))
-fBatch = dfSample$characteristics_ch1.2
+dfSample = data.frame(colData(oSce.T))
+fBatch = dfSample$characteristics_ch1.4
 table(fBatch)
 fBatch = factor(fBatch)
 
@@ -131,7 +139,7 @@ dir.create('results')
 pdf('results/matrixClustering.pdf')
 
 ## compare the 2 methods using various plots
-par(mfrow=c(1,2))
+par(mfrow=c(1,1))
 boxplot.median.summary(oDiag.1, fBatch, legend.pos = 'topright', axis.label.cex = 0.7)
 boxplot.median.summary(oDiag.2, fBatch, legend.pos = 'topright', axis.label.cex = 0.7)
 
@@ -150,29 +158,54 @@ plot.PCA(oDiag.2, fBatch, cex.main=1)
 plot.dendogram(oDiag.1, fBatch, labels_cex = 0.8, cex.main=0.7)
 plot.dendogram(oDiag.2, fBatch, labels_cex = 0.8, cex.main=0.7)
 
-## change parameters 
-l = CDiagnosticPlotsGetParameters(oDiag.1)
-l$PCA.jitter = F
-l$HC.jitter = F
+table(fBatch)
+fBatch = gsub('mouse age: ', '', fBatch)
+tx = gsub('selection marker: ', '', dfSample$characteristics_ch1.2)
+fBatch = factor(fBatch)
 
-oDiag.1 = CDiagnosticPlotsSetParameters(oDiag.1, l)
-oDiag.2 = CDiagnosticPlotsSetParameters(oDiag.2, l)
-plot.PCA(oDiag.1, fBatch)
-plot.PCA(oDiag.2, fBatch)
-plot.dendogram(oDiag.1, fBatch, labels_cex = 0.6)
-plot.dendogram(oDiag.2, fBatch, labels_cex = 0.7)
+plot.PCA(oDiag.1, fBatch, csLabels = tx, cex.main=1)
+plot.PCA(oDiag.1, factor(tx), csLabels = as.character(fBatch), cex.main=1)
+# ## change parameters 
+# l = CDiagnosticPlotsGetParameters(oDiag.1)
+# l$PCA.jitter = F
+# l$HC.jitter = F
+# 
+# oDiag.1 = CDiagnosticPlotsSetParameters(oDiag.1, l)
+# oDiag.2 = CDiagnosticPlotsSetParameters(oDiag.2, l)
+# plot.PCA(oDiag.1, fBatch)
+# plot.PCA(oDiag.2, fBatch)
+# plot.dendogram(oDiag.1, fBatch, labels_cex = 0.6)
+# plot.dendogram(oDiag.2, fBatch, labels_cex = 0.7)
 
 ##### fit a model and produce some plots
+#levels(fBatch) = c('E14.5', "E18.5", "4-6 weeks", "6 days")
+fBatch = as.character(dfSample$characteristics_ch1.4)
+fBatch = gsub('mouse age: ', '', fBatch)
+fBatch = factor(fBatch, levels=c('E14.5', "E18.5", "6 days", "4-6 weeks"))
+tx = gsub('selection marker: ', '', as.character(dfSample$characteristics_ch1.2))
+tx = factor(tx)
+st = gsub('strain: ', '', as.character(dfSample$characteristics_ch1))
+st = factor(st)
+dfData = data.frame(Krt76=exprs(oSce.F)['Krt76', ], Coef=fBatch, Coef.adj=st, Coef.adj2 = tx)
 
-dfData = data.frame(Krt76=exprs(oSce.F)['Krt76', ], Coef=fBatch)
-# create a second factor representing the intestine or thymus
-dfData$organ = factor(gsub('^\\w+_', '', as.character(fBatch)))
+dotplot(Krt76 ~ Coef, data=dfData, groups=Coef.adj, pch=c(1:4), col=1:4, key=list(space='top', columns=2, points=list(pch=1:4, col=1:4),
+                                                                                  text=list(levels(dfData$Coef.adj))),
+        main='Normalised Krt Expression on Log Scale')
+
+dotplot(Krt76 ~ Coef | Coef.adj:Coef.adj2, data=dfData, type='p', par.strip.text=list(cex=0.7))
+
+## drop some empty factor levels
+dfData = dfData[dfData$Coef.adj2 %in% c('CD45-', 'CD45- Epcam+'),]
+dfData = droplevels.data.frame(dfData)
+dfData$Coef.adj = dfData$Coef.adj:dfData$Coef.adj2
+dfData = droplevels.data.frame(dfData)
+
 
 library(lme4)
 fit.lme1 = lmer(Krt76 ~ 1  + (1 | Coef), data=dfData)
 summary(fit.lme1)
 
-fit.lme2 = glmer.nb(Krt76 ~ 1  + (1 | Coef) + (1 | organ), data=dfData)
+fit.lme2 = lmer(Krt76 ~ 1  + (1 | Coef) + (1 | Coef.adj), data=dfData)
 summary(fit.lme2)
 
 anova(fit.lme1, fit.lme2)
@@ -182,58 +215,84 @@ library(rstan)
 rstan_options(auto_write = TRUE)
 options(mc.cores = parallel::detectCores())
 
-stanDso = rstan::stan_model(file='../nbRespRandomEffectBatches.stan')
+stanDso = rstan::stan_model(file='../tResponse2RandomEffectsNoFixed.stan')
 
 ## calculate hyperparameters for variance of coefficients
-l = gammaShRaFromModeSD(sd(log(dfData$Krt76+0.5)), 2*sd(log(dfData$Krt76+0.5)))
+l = gammaShRaFromModeSD(sd(dfData$Krt76+0.5), 2*sd(dfData$Krt76+0.5))
 
 
-## subset the data to get the second level of nested parameters
-## this is done to avoid loops in the stan script to map the scale parameters
-## of each ind/gene to the respective set of coefficients for jitters
-d = dfData[!duplicated(dfData$Coef), ] 
 ### set stan input data
 lStanData = list(Ntotal=nrow(dfData), Nclusters1=nlevels(dfData$Coef),
-                 NScaleBatches1 = nlevels(dfData$organ),
-                 Nsizes = 1,
+                 Nclusters2=nlevels(dfData$Coef.adj),
                  NgroupMap1=as.numeric(dfData$Coef),
-                 NBatchMap1 = as.numeric(d$organ),
-                 NsizeMap=rep(1, times=nrow(dfData)),
-                 Ncol=1,
+                 NgroupMap2=as.numeric(dfData$Coef.adj),
                  y=dfData$Krt76, 
-                 gammaShape=l$shape, gammaRate=l$rate,
-                 intercept = mean(log(dfData$Krt76+0.5)), intercept_sd= sd(log(dfData$Krt76+0.5))*2)
-
+                 gammaShape=l$shape, gammaRate=l$rate)
 
 fit.stan = sampling(stanDso, data=lStanData, iter=10000, chains=4,
-                    pars=c('sigmaRan1', 'betas',
-                           'iSize',
-                           'rGroupsJitter1', 
-                           'mu'
-                           ),
-                    cores=4, control=list(adapt_delta=0.99, max_treedepth = 15))
+                    pars=c('betas', 'sigmaRan1', 'sigmaRan2', 
+                           'sigmaPop', 'mu', 'nu',
+                           'rGroupsJitter1', 'rGroupsJitter2'),
+                    cores=4, control=list(adapt_delta=0.99, max_treedepth = 12))
 
-
-print(fit.stan, digits=3)
-traceplot(fit.stan, c('betas'))
+print(fit.stan, c('betas', 'sigmaRan1', 'sigmaRan2', 'sigmaPop', 'rGroupsJitter1', 'rGroupsJitter2', 'nu'), digits=3)
+traceplot(fit.stan, 'betas')
 traceplot(fit.stan, 'sigmaRan1')
+
+m = extract(fit.stan)$mu
+plot(density(dfData$Krt76))
+lines(density(fitted(fit.lme1)), col=1)
+lines(density(fitted(fit.lme2)), col=2)
+lines(density(colMeans(m)), col=3)
+#apply(m, 1, function(x) lines(density(x), col=3))
 
 ## make some plots for results
 library(lattice)
-bwplot(log(Krt76+0.01) ~ Coef, data=dfData, panel=panel.violin, type='b',
-       par.strip.text=list(cex=0.7), varwidth=F, main='Normalised expression for Krt76')
-
 bwplot(Krt76 ~ Coef, data=dfData, panel=panel.violin, type='b',
        par.strip.text=list(cex=0.7), varwidth=F, main='Normalised expression for Krt76')
 
-bwplot(log(Krt76+0.01) ~ Coef, data=dfData, panel=function(x, y, ...) panel.bwplot(x, y, pch='|',...), type='b',
+bwplot(Krt76 ~ Coef | Coef.adj, data=dfData, panel=panel.violin, type='b',
+       par.strip.text=list(cex=0.7), varwidth=F, main='Normalised expression for Krt76')
+
+bwplot(colMeans(m) ~ Coef | Coef.adj, data=dfData, panel=panel.violin, type='b',
+       par.strip.text=list(cex=0.7), varwidth=F, main='Model Fitted Krt76')
+
+bwplot(Krt76 ~ Coef, data=dfData, panel=function(x, y, ...) panel.bwplot(x, y, pch='|',...), type='b',
        par.strip.text=list(cex=0.7), varwidth=T, main='Normalised expression for Krt76')
+
+xyplot(Krt76 ~ Coef, data=dfData, type='p')
+dotplot(Krt76 ~ Coef, data=dfData, type='p')
+dotplot(Krt76 ~ Coef, data=dfData, groups=Coef.adj, auto.key=list(space='top', columns=2))
+dotplot(Krt76 ~ Coef, data=dfData, groups=Coef.adj, pch=c(1:4), col=1:4, key=list(space='top', columns=2, points=list(pch=1:4, col=1:4),
+                                                                         text=list(levels(dfData$Coef.adj))),
+        main='Normalised Krt Expression on Log Scale')
+
+dotplot(Krt76 ~ Coef | Coef.adj, data=dfData, type='p', par.strip.text=list(cex=0.7))
+
+table(dfData$Coef)
+table(dfData$Coef.adj)
+tapply(dfData$Krt76, dfData$Coef.adj, mean)
+tapply(dfData$Krt76, dfData$Coef, mean)
+# mCoef = extract(fit.stan)$rGroupsJitter1
+# dim(mCoef)
+# colnames(mCoef) = levels(dfData$Coef)
+# 
+# mCoef.adj = extract(fit.stan)$rGroupsJitter2
+# dim(mCoef.adj)
+# colnames(mCoef.adj) = levels(dfData$Coef.adj)
+
+## get the intercept at population level
+# iIntercept = as.numeric(extract(fit.stan)$betas)
+# # add the intercept to each random effect variable, to get the full coefficient
+# m = mCoef[,'4-6 weeks'] + mCoef.adj[,'CD45+ IL25+']
+# m = m + iIntercept
+# hist(m, xlab='', main='Fitted Value')
 
 ### create plot for coefficients
 mModules = extract(fit.stan)$rGroupsJitter1
 dim(mModules)
 ## get the intercept at population level
-iIntercept = extract(fit.stan)$betas[,1]
+iIntercept = extract(fit.stan)$betas
 ## add the intercept to each random effect variable, to get the full coefficient
 mModules = sweep(mModules, 1, iIntercept, '+')
 
@@ -242,6 +301,7 @@ m = colMeans(mModules)
 s = apply(mModules, 2, sd)*1.96
 d = data.frame(m, s, s1=m+s, s2=m-s)
 d$mods = levels(dfData$Coef)
+d$mods = factor(d$mods, levels=c('E14.5', "E18.5", "6 days",  "4-6 weeks"))
 
 dotplot(mods ~ m+s1+s2, data=d, panel=llines(d$s1, d$s2), cex=0.6, pch=20,
-        par.strip.text=list(cex=0.5), main='Fitted Coefficients for Krt76 ~ sample group', xlab='log Expression')
+        par.strip.text=list(cex=0.5), main='Model Based Average for Krt76 ~ sample group', xlab='Average log Expression')
